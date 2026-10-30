@@ -76,38 +76,86 @@
 
     </div>
 
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="supabase-config.js"></script>
     <script>
         const images = [ "https://cdn.discordapp.com/avatars/494957550748303426/e7ee6fd9c4901b7d6bd7410cded04f29.webp?size=512", "https://cdn.discordapp.com/avatars/1068156853252534282/3e00afbeca1a423d13d81c4096e51fcb.webp?size=512", "https://cdn.discordapp.com/avatars/491705219277914122/0ebf82c05e94da9aa1aa489c6b32d02f.webp?size=512", "https://cdn.discordapp.com/avatars/798724389293260821/7f4ec753cc322c4c182d67ba041a2a5a.webp?size=512", "https://cdn.discordapp.com/avatars/1099437978536915007/8a8ac588b91ffa6fe0037cc177999d4a.webp?size=512", "https://cdn.discordapp.com/avatars/792234813867819018/0bb5a4e7aa8fbb87ffc7fcdfcf4527cf.webp?size=512", "https://cdn.discordapp.com/avatars/989533663551172648/e5f9ac3fe5fba6b352e3ca6210f5d75d.webp?size=512", "https://cdn.discordapp.com/avatars/614967476643692544/8f010d2453d90e85d151acbd0d80f466.webp?size=512", "https://cdn.discordapp.com/avatars/429853867996610570/85bf6d963018c011244d1d2967422a29.webp?size=512", "https://cdn.discordapp.com/avatars/758524255347671050/d346e43ea2d1c8c6569a84a250dff8dd.webp?size=512", "https://cdn.discordapp.com/avatars/1409307791637614655/ceeda698f5a6fd9d34068d07840f6324.webp?size=512", "https://cdn.discordapp.com/avatars/649799718477496325/688caa921d9df3325fde29e6d8002c62.webp?size=512", "https://cdn.discordapp.com/avatars/473893575822671882/f70d0d33ad602dd2bc3ddcbe554af50b.webp?size=512", "https://cdn.discordapp.com/avatars/617084711541669910/a3638b341f611a5c0dd0857e0c6474b3.webp?size=512", "https://cdn.discordapp.com/avatars/315134311776911360/a_b96310cc9d421f8fae05e2757c1a166a.webp?size=512", "https://cdn.discordapp.com/avatars/628313486782365696/717bc9d2fe025e02983adc22c0340f92.webp?size=512", "https://cdn.discordapp.com/avatars/461676198246744085/5c8dd6129f64c4dbb87e66bef1c122cb.webp?size=512", "https://cdn.discordapp.com/avatars/820120013411188766/5e3c19c97315efbf6988b7b5d0740d77.webp?size=512", "https://cdn.discordapp.com/avatars/544178631610466344/a09ea1dae7c62f2009ba826a87a04d99.webp?size=512"];
 
         const categoryIds = ["chd", "gy", "jw", "neutral", "rearded", "slop", "godtier"];
         const columns = [...document.querySelectorAll(".column")];
-        let votes = {};
 
-        try {
-            votes = JSON.parse(localStorage.getItem("pfpRankerVotes")) || {};
-        } catch {
-            votes = {};
-        }
+        async function renderResults() {
+            const { data: voteRows, error } = await supabaseClient
+                .from("image_votes")
+                .select("image_url, selections");
 
-        columns.slice(0, categoryIds.length).forEach((column, columnIndex) => {
-            const categoryId = categoryIds[columnIndex];
-            column.querySelectorAll(".item").forEach((item) => item.remove());
+            if (error) {
+                console.error("Could not load votes:", error);
+                const message = document.createElement("p");
+                message.textContent = "Could not load results. Check your connection and try again.";
+                document.body.prepend(message);
+                return;
+            }
 
-            const rankedImages = images
-                .map((src, index) => {
-                    const imageVotes = votes[src];
-                    const total = imageVotes?.total || 0;
-                    const checked = imageVotes?.counts?.[categoryId] || 0;
+            const votesByImage = {};
+            voteRows.forEach(({ image_url: imageUrl, selections }) => {
+                const imageVotes = votesByImage[imageUrl] || { total: 0, counts: {} };
+                imageVotes.total++;
 
-                    return {
-                        src,
-                        index,
-                        percentage: total ? Math.round((checked / total) * 100) : 0
-                    };
-                })
+                categoryIds.forEach((categoryId) => {
+                    imageVotes.counts[categoryId] = (imageVotes.counts[categoryId] || 0)
+                        + (selections?.[categoryId] ? 1 : 0);
+                });
+
+                votesByImage[imageUrl] = imageVotes;
+            });
+
+            columns.slice(0, categoryIds.length).forEach((column, columnIndex) => {
+                const categoryId = categoryIds[columnIndex];
+                column.querySelectorAll(".item").forEach((item) => item.remove());
+
+                const rankedImages = images
+                    .map((src, index) => {
+                        const imageVotes = votesByImage[src];
+                        const total = imageVotes?.total || 0;
+                        const checked = imageVotes?.counts?.[categoryId] || 0;
+
+                        return {
+                            src,
+                            index,
+                            percentage: total ? Math.round((checked / total) * 100) : 0
+                        };
+                    })
+                    .sort((first, second) => second.percentage - first.percentage);
+
+                rankedImages.forEach(({ src, index, percentage }) => {
+                    const item = document.createElement("div");
+                    item.className = "item";
+
+                    const image = document.createElement("img");
+                    image.src = src;
+                    image.alt = `Profile ${index + 1}`;
+
+                    const scoreLabel = document.createElement("p");
+                    scoreLabel.textContent = `${percentage}%`;
+
+                    item.append(image);
+                    item.append(scoreLabel);
+                    column.append(item);
+                });
+            });
+
+            const gameboyImage = "https://cdn.discordapp.com/avatars/617084711541669910/a3638b341f611a5c0dd0857e0c6474b3.webp?size=512";
+            const gameboyColumn = columns[categoryIds.length];
+            const rankedGameboyImages = images
+                .map((src, index) => ({
+                    src,
+                    index,
+                    percentage: src === gameboyImage ? 100 : 0
+                }))
                 .sort((first, second) => second.percentage - first.percentage);
 
-            rankedImages.forEach(({ src, index, percentage }) => {
+            rankedGameboyImages.forEach(({ src, index, percentage }) => {
                 const item = document.createElement("div");
                 item.className = "item";
 
@@ -120,38 +168,12 @@
 
                 item.append(image);
                 item.append(scoreLabel);
-                column.append(item);
+                gameboyColumn.append(item);
             });
-        });
+        }
 
-        const gameboyImage = "https://cdn.discordapp.com/avatars/617084711541669910/a3638b341f611a5c0dd0857e0c6474b3.webp?size=512";
-        const gameboyColumn = columns[categoryIds.length];
-        const rankedGameboyImages = images
-            .map((src, index) => ({
-                src,
-                index,
-                percentage: src === gameboyImage ? 100 : 0
-            }))
-            .sort((first, second) => second.percentage - first.percentage);
-
-        rankedGameboyImages.forEach(({ src, index, percentage }) => {
-            const item = document.createElement("div");
-            item.className = "item";
-
-            const image = document.createElement("img");
-            image.src = src;
-            image.alt = `Profile ${index + 1}`;
-
-            const scoreLabel = document.createElement("p");
-            scoreLabel.textContent = `${percentage}%`;
-
-            item.append(image);
-            item.append(scoreLabel);
-            gameboyColumn.append(item);
-        });
+        renderResults();
     </script>
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="supabase-config.js"></script>
 
 </body>
 </html>

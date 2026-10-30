@@ -5,36 +5,44 @@ let pics = [ "https://cdn.discordapp.com/avatars/494957550748303426/e7ee6fd9c490
 const categoryIds = ["chd", "gy", "jw", "neutral", "rearded", "slop", "godtier"];
 const checkboxes = categoryIds.map((id) => document.getElementById(id));
 const pic = document.getElementById("pic");
-const storageKey = "pfpRankerVotes";
 let cycle = -1;
+let isSaving = false;
 
 CyclePic();
 
-function getVotes() {
-    try {
-        return JSON.parse(localStorage.getItem(storageKey)) || {};
-    } catch {
-        return {};
+async function saveCurrentVote(imageUrl) {
+    const selections = Object.fromEntries(
+        categoryIds.map((categoryId) => [
+            categoryId,
+            document.getElementById(categoryId).checked
+        ])
+    );
+
+    const { error } = await supabaseClient
+        .from("image_votes")
+        .insert({ image_url: imageUrl, selections });
+
+    if (error) {
+        throw error;
     }
 }
 
-function saveCurrentVote(imageUrl) {
-    const votes = getVotes();
-    const imageVotes = votes[imageUrl] || { total: 0, counts: {} };
+async function CyclePic() {
+    if (isSaving) {
+        return;
+    }
 
-    imageVotes.total++;
-    categoryIds.forEach((categoryId) => {
-        imageVotes.counts[categoryId] = (imageVotes.counts[categoryId] || 0)
-            + (document.getElementById(categoryId).checked ? 1 : 0);
-    });
-
-    votes[imageUrl] = imageVotes;
-    localStorage.setItem(storageKey, JSON.stringify(votes));
-}
-
-function CyclePic() {
     if (cycle >= 0 && cycle < pics.length) {
-        saveCurrentVote(pics[cycle]);
+        isSaving = true;
+        try {
+            await saveCurrentVote(pics[cycle]);
+        } catch (error) {
+            console.error("Could not save this vote:", error);
+            alert("Your vote could not be saved. Check your connection and try again.");
+            isSaving = false;
+            return;
+        }
+        isSaving = false;
     }
 
     cycle++;
